@@ -10,6 +10,9 @@ This example involves the use of Bluetooth legacy profile A2DP for audio stream 
 Applications such as bluetooth speakers can take advantage of this example as a reference of basic functionalities.
 
 ## How to use this example
+add the following two lines to .zprofile
+export PATH=$HOME/esp/xtensa-esp32-elf/bin:$PATH
+export IDF_PATH=~/esp/esp-idf
 
 ### Hardware Required
 
