@@ -32,6 +32,15 @@
 #include "esp_a2dp_api.h"
 #include "esp_avrc_api.h"
 #include "driver/i2s.h"
+#include "driver/gpio.h"
+
+#include "main.h"
+
+static uint32_t led_state = LED_OFF;
+static uint32_t led_freq = 1000;
+
+#define GPIO_OUTPUT_IO_2    2
+#define GPIO_OUTPUT_PIN_SEL  (1ULL<<GPIO_OUTPUT_IO_2)
 
 /* event for handler "bt_av_hdl_stack_up */
 enum {
@@ -41,6 +50,8 @@ enum {
 /* handler for bluetooth stack enabled events */
 static void bt_av_hdl_stack_evt(uint16_t event, void *p_param);
 
+/* Handle status led */
+static void led_handler(void);
 
 void app_main()
 {
@@ -53,11 +64,7 @@ void app_main()
     ESP_ERROR_CHECK(err);
 
     i2s_config_t i2s_config = {
-#ifdef CONFIG_A2DP_SINK_OUTPUT_INTERNAL_DAC
-        .mode = I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN,
-#else
         .mode = I2S_MODE_MASTER | I2S_MODE_TX,                                  // Only TX
-#endif
         .sample_rate = 44100,
         .bits_per_sample = 16,
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,                           //2-channels
@@ -70,10 +77,6 @@ void app_main()
 
 
     i2s_driver_install(0, &i2s_config, 0, NULL);
-#ifdef CONFIG_A2DP_SINK_OUTPUT_INTERNAL_DAC
-    i2s_set_dac_mode(I2S_DAC_CHANNEL_BOTH_EN);
-    i2s_set_pin(0, NULL);
-#else
     i2s_pin_config_t pin_config = {
         .bck_io_num = CONFIG_I2S_BCK_PIN,
         .ws_io_num = CONFIG_I2S_LRCK_PIN,
@@ -82,8 +85,6 @@ void app_main()
     };
 
     i2s_set_pin(0, &pin_config);
-#endif
-
 
     ESP_ERROR_CHECK(esp_bt_controller_mem_release(ESP_BT_MODE_BLE));
 
@@ -131,7 +132,7 @@ void app_main()
     pin_code[3] = '4';
     esp_bt_gap_set_pin(pin_type, 4, pin_code);
 
-
+    led_handler();
 }
 
 void bt_app_gap_cb(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t *param)
@@ -186,10 +187,62 @@ static void bt_av_hdl_stack_evt(uint16_t event, void *p_param)
 
         /* set discoverable and connectable mode, wait to be connected */
         esp_bt_gap_set_scan_mode(ESP_BT_SCAN_MODE_CONNECTABLE_DISCOVERABLE);
+
+        /* set indicator led to LED_BLINK state */
+        set_led_state(LED_BLINK);
         break;
     }
     default:
         ESP_LOGE(BT_AV_TAG, "%s unhandled evt %d", __func__, event);
         break;
     }
+}
+
+static void led_handler(void) {
+    gpio_config_t io_conf;
+    //disable interrupt
+    io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
+    //set as output mode
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    //bit mask of the pins that you want to set,e.g.GPIO18/19
+    io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
+    //disable pull-down mode
+    io_conf.pull_down_en = 0;
+    //disable pull-up mode
+    io_conf.pull_up_en = 0;
+    //configure GPIO with the given settings
+    gpio_config(&io_conf);
+
+    int cnt = 0;
+    for(;;) {
+        cnt++;
+        vTaskDelay(led_freq / portTICK_RATE_MS);
+        switch (led_state)
+        {
+        case LED_SOLID:
+            gpio_set_level(GPIO_OUTPUT_IO_2, 1);
+            break;
+
+        case LED_BLINK:
+            gpio_set_level(GPIO_OUTPUT_IO_2, cnt % 2);
+            break;
+
+        case LED_BLINK_ERROR:
+            gpio_set_level(GPIO_OUTPUT_IO_2, cnt % 2);
+            set_led_freq(100);
+            break;
+
+        default: /* LED_OFF */
+            gpio_set_level(GPIO_OUTPUT_IO_2, 0);
+            break;
+        }
+    }
+}
+
+void set_led_freq(uint32_t freq) {
+    led_freq = freq;
+}
+
+void set_led_state(uint32_t state) {
+    led_state = state;
 }

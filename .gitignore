@@ -56,3 +56,6 @@ build/
 
 # Menuconfig files
 *.old
+
+# Build env
+.vscode/
